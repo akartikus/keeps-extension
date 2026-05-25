@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "Keeps — Workspace Memory",
+  "version": "0.1.0",
+  "description": "Gestion minimaliste et intelligente de vos contextes mentaux.",
+  "permissions": ["sidePanel", "tabs", "storage"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "side_panel": {
+    "default_path": "index.html"
+  },
+  "action": {
+    "default_title": "Ouvrir Keeps"
+  },
+  "commands": {
+    "_execute_side_panel": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+Y",
+        "mac": "Command+Shift+Y"
+      },
+      "description": "Ouvrir la sidebar Keeps"
+    }
+  }
+}
