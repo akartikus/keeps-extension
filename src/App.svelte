@@ -4,13 +4,15 @@
   import Header from './components/Header.svelte';
   import EmptyState from './components/EmptyState.svelte';
   import Icebox from './components/Icebox.svelte';
+  import { fade, slide } from 'svelte/transition';
+  import { cubicOut } from 'svelte/easing';
 
   /* global chrome */
 
   /** @type {Array<{id: number, title: string, discarded: boolean}>} */
   let tabs = [];
 
-  /** @type {any[]} */
+  /** @type {Array<{id: number, title: string, discarded: boolean}>} */
   let icebox = []; // Notre liste d'onglets "sauvegardés au frais"
 
   let appName = 'Keeps';
@@ -84,11 +86,18 @@
         <!-- Liste des Onglets -->
         <div class="space-y-2">
           {#each tabs as tab (tab.id)}
-            <TabItem
-              {tab}
-              onFreeze={(e) => freezeTab(e)}
-              onPutToIcebox={(e) => sendToIcebox(e)}
-            />
+            <!--  Ne pas appliquer l`qnimation si c`est un freeze, prevoire une liste de freeze a mettre a jour correctement -->
+            <div
+              in:slide={{ duration: 200, easing: cubicOut }}
+              out:fade={{ duration: 150 }}
+              class="origin-top"
+            >
+              <TabItem
+                {tab}
+                onFreeze={(e) => freezeTab(e)}
+                onPutToIcebox={(e) => sendToIcebox(e)}
+              />
+            </div>
           {/each}
         </div>
       {/if}
