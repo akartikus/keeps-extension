@@ -53,14 +53,29 @@
           <div class="flex items-center gap-2 shrink-0">
             <button
               onclick={() => onRestore(item)}
-              class="text-[10px] text-sky-400 hover:text-sky-300 font-medium transition"
+              class="cursor-pointer text-[10px] text-teal-700 hover:text-teal-500 font-medium transition"
               >Restaurer</button
             >
-            <button
-              onclick={() => onDelete(item.id)}
-              class="text-[10px] text-zinc-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all"
-              title="Supprimer">✕</button
-            >
+            <div class="relative group/tooltip inline-block">
+              <button
+                onclick={() => onDelete(item.id)}
+                class="text-[10px] text-zinc-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all cursor-pointer"
+              >
+                x
+              </button>
+
+              <!-- Notre Tooltip en CSS Pur -->
+              <!-- Tooltip positionné à gauche avec un fort Z-Index -->
+              <span
+                class="absolute right-full top-1/2 -translate-y-1/2 mr-2
+               px-2 py-1 text-[10px] text-red-200 bg-red-950/80 border border-red-800 rounded shadow-xl
+               whitespace-nowrap pointer-events-none opacity-0 scale-95
+               group-hover/tooltip:opacity-100 group-hover/tooltip:scale-100
+               transition-all duration-100 origin-right z-50"
+              >
+                Supprimer
+              </span>
+            </div>
           </div>
         </div>
       {/each}
