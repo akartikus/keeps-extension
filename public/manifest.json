@@ -3,7 +3,7 @@
   "name": "Keeps — Workspace Memory",
   "version": "0.1.0",
   "description": "Gestion minimaliste et intelligente de vos contextes mentaux.",
-  "permissions": ["sidePanel", "tabs", "storage"],
+  "permissions": ["sidePanel", "tabs", "storage", "favicon"],
   "background": {
     "service_worker": "background.js"
   },
@@ -20,6 +20,13 @@
         "mac": "Command+Shift+Y"
       },
       "description": "Ouvrir la sidebar Keeps"
+    },
+    "save-to-icebox": {
+      "suggested_key": {
+        "default": "Alt+S",
+        "mac": "Alt+S"
+      },
+      "description": "Envoyer l'onglet actif dans la Icebox"
     }
   }
 }

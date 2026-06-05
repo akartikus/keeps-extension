@@ -12,22 +12,56 @@
   /** @type {Array<{id: number, title: string, discarded: boolean}>} */
   let tabs = [];
 
-  /** @type {Array<{id: number, title: string, discarded: boolean}>} */
+  /** @type {any[]} */
   let icebox = []; // Notre liste d'onglets "sauvegardés au frais"
 
   let appName = 'Keeps';
+  let restoringCount = 0;
 
   onMount(() => {
-    refreshTabs();
+    loadIcebox().then(() => {
+      refreshTabs();
+    });
+
+    //  Listen to icebox local storage change
+    if (typeof chrome !== 'undefined' && chrome.storage) {
+      chrome.storage.onChanged.addListener((changes, areaName) => {
+        if (areaName === 'local' && changes.icebox) {
+          // @ts-ignore
+          icebox = changes.icebox.newValue || [];
+          if (restoringCount === 0) {
+            refreshTabs();
+          }
+        }
+      });
+    }
   });
+
+  // @ts-ignore
+  function loadIcebox() {
+    return new Promise((resolve) => {
+      if (typeof chrome !== 'undefined' && chrome.storage) {
+        chrome.storage.local.get({ icebox: [] }, (result) => {
+          // @ts-ignore
+          icebox = result.icebox;
+          // @ts-ignore
+          resolve();
+        });
+      } else {
+        // @ts-ignore
+        resolve();
+      }
+    });
+  }
 
   function refreshTabs() {
     if (typeof chrome !== 'undefined' && chrome.runtime) {
       chrome.runtime.sendMessage({ action: 'GET_TABS' }, (response) => {
         if (response && response.tabs) {
-          // Pour le POC, on ne prend pas en compte les onglets déjà mis dans la Icebox
-          const iceboxIds = icebox.map((t) => t.id);
-          tabs = response.tabs.filter((t) => !iceboxIds.includes(t.id));
+          // On filtre les onglets affichés pour ne pas montrer ceux qui sont déjà dans la Icebox
+          const iceboxUrls = icebox.map((t) => t.url);
+          // @ts-ignore
+          tabs = response.tabs.filter((t) => !iceboxUrls.includes(t.url));
         }
       });
     }
@@ -47,21 +81,52 @@
 
   /** @type {(tab: any) => void} */
   function sendToIcebox(tab) {
-    // 1. On l'ajoute à notre état local Icebox
-    icebox = [...icebox, tab];
-    // 2. On le retire de la liste principale
-    tabs = tabs.filter((t) => t.id !== tab.id);
+    // Action manuelle depuis l'UI Svelte (clic sur le bouton "Mettre au frais")
+    const newIceboxItem = {
+      id: Date.now(),
+      title: tab.title,
+      url: tab.url,
+      favIconUrl: tab.favIconUrl,
+      addedAt: new Date().toISOString(),
+    };
 
-    // NB : Dans la prochaine étape, nous demanderons à chrome.tabs.remove()
-    // de fermer réellement l'onglet dans le navigateur pour libérer la barre d'onglets.
+    chrome.storage.local.set({ icebox: [...icebox, newIceboxItem] }, () => {
+      if (tab.id) chrome.tabs.remove(tab.id);
+    });
   }
 
-  /** @type {(tab: any) => void} */
-  function restoreFromIcebox(tab) {
-    // Retirer de la icebox
-    icebox = icebox.filter((t) => t.id !== tab.id);
-    // Dans l'app finale, on réouvrira l'onglet via chrome.tabs.create({ url: tab.url })
-    refreshTabs();
+  /** @param {any} item */
+  function restoreFromIcebox(item) {
+    if (typeof chrome !== 'undefined' && chrome.tabs) {
+      // On lève le drapeau : "Attention, je gère le rafraîchissement moi-même !"
+      restoringCount++;
+      chrome.tabs.create({ url: item.url }, (newTab) => {
+        /** * @param {number} tabId
+         * @param {{ status?: string, title?: string }} changeInfo
+         */
+        const listener = (tabId, changeInfo) => {
+          if (tabId === newTab.id && changeInfo.status === 'complete') {
+            refreshTabs();
+            // L'onglet a fini de charger, on peut rabaisser le drapeau
+            restoringCount = Math.max(0, restoringCount - 1);
+            chrome.tabs.onUpdated.removeListener(listener);
+          }
+        };
+
+        chrome.tabs.onUpdated.addListener(listener);
+
+        // Cette ligne va déclencher onChanged, mais refreshTabs() sera bloqué par le flag !
+        const updatedIcebox = icebox.filter((t) => t.id !== item.id);
+        chrome.storage.local.set({ icebox: updatedIcebox });
+      });
+    }
+  }
+
+  /** @param {number} itemId */
+  function deleteFromIcebox(itemId) {
+    // Supprime définitivement sans réouvrir
+    const updatedIcebox = icebox.filter((t) => t.id !== itemId);
+    chrome.storage.local.set({ icebox: updatedIcebox });
   }
 </script>
 
@@ -108,6 +173,6 @@
   <Icebox
     {icebox}
     onRestore={(tab) => restoreFromIcebox(tab)}
-    onRefresh={() => refreshTabs()}
+    onDelete={(id) => deleteFromIcebox(id)}
   ></Icebox>
 </main>

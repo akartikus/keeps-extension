@@ -1,45 +1,63 @@
 <script>
-  // On déclare les entrées et les sorties au même endroit (les Props)
-  /** * @typedef {Object} Props
+  /**
+   * @typedef {Object} Props
    * @property {any} tab
-   * @property {(id: number) => void} onFreeze - Notre ancienne sortie 'freeze'
-   * @property {(tab: any) => void} onPutToIcebox - Notre ancienne sortie 'putToIcebox'
+   * @property {(id: number) => void} onFreeze
+   * @property {(tab: any) => void} onPutToIcebox
    */
 
   /** @type {Props} */
-  let { tab, onFreeze, onPutToIcebox } = $props(); // $props() est la nouvelle Rune Svelte 5
+  let { tab, onFreeze, onPutToIcebox } = $props();
+
+  /* global chrome */
+  // Génère l'URL sécurisée du favicon via l'API Chrome
+  let faviconUrl = $derived(
+    tab.url && typeof chrome !== 'undefined'
+      ? `chrome-extension://${chrome.runtime.id}/_favicon/?pageUrl=${encodeURIComponent(tab.url)}&size=32`
+      : '',
+  );
+  let isImageValid = $state(true);
 </script>
 
 <div
-  class="flex items-center justify-between p-2.5 rounded-xl bg-surface/30 border border-zinc-800/60 text-xs"
+  class="flex items-center justify-between p-2.5 rounded-xl bg-surface/30 border border-zinc-800 hover:border-zinc-700/80 transition-colors duration-150 text-xs group"
 >
-  <div class="flex flex-col min-w-0 pr-2">
-    <span
-      class="truncate font-medium text-zinc-300 {tab.discarded
-        ? 'opacity-40 italic'
-        : ''}"
-    >
-      {tab.title}
-    </span>
+  <div class="flex items-center min-w-0 pr-2 gap-2.5">
+    {#if faviconUrl && isImageValid}
+      <img
+        src={faviconUrl}
+        alt=""
+        class="w-4 h-4 rounded shrink-0 bg-zinc-800"
+        onerror={() => (isImageValid = false)}
+      />
+    {/if}
+
+    <div class="flex flex-col min-w-0">
+      <span
+        class="truncate font-medium text-zinc-300 {tab.discarded
+          ? 'opacity-40 italic'
+          : ''}"
+      >
+        {tab.title}
+      </span>
+      <span class="text-[10px] text-zinc-500 truncate font-mono mt-0.5">
+        {tab.url ? new URL(tab.url).hostname : ''}
+      </span>
+    </div>
   </div>
 
   <div class="flex items-center gap-1.5 shrink-0">
     {#if !tab.discarded}
       <button
         onclick={() => onFreeze(tab.id)}
-        class="text-[10px] bg-sky-950/40 text-sky-400 border border-sky-900/50 px-2 py-1 rounded-md
-             hover:bg-sky-900/60 hover:scale-105 active:scale-95 transition-all duration-150"
+        class="text-[10px] bg-sky-950/40 text-sky-400 border border-sky-900/50 px-2 py-1 rounded-md"
+        >❄️ Geler</button
       >
-        ❄️ Geler
-      </button>
     {/if}
-
     <button
       onclick={() => onPutToIcebox(tab)}
-      class="text-[10px] bg-zinc-800 text-zinc-300 px-2 py-1 rounded-md
-           hover:bg-zinc-700 hover:text-white active:bg-zinc-600 transition-colors duration-150"
+      class="text-[10px] bg-zinc-800 text-zinc-300 px-2 py-1 rounded-md"
+      >📦 Mettre au frais</button
     >
-      📦 Mettre au frais
-    </button>
   </div>
 </div>
