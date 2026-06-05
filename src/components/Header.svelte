@@ -2,11 +2,11 @@
   // On déclare les entrées et les sorties au même endroit (les Props)
   /** * @typedef {Object} Props
    * @property {string} appName
-   * @property {() => void} onRefresh
+   * @property {string} extensionRam
    */
 
   /** @type {Props} */
-  let { appName, onRefresh } = $props(); // $props() est la nouvelle Rune Svelte 5
+  let { appName, extensionRam } = $props(); // $props() est la nouvelle Rune Svelte 5
 </script>
 
 <div class="flex items-center justify-between">
@@ -19,10 +19,10 @@
       >v0.1</span
     >
   </div>
-  <button
-    onclick={() => onRefresh()}
-    class="text-[11px] text-zinc-400 hover:text-zinc-200 transition flex items-center gap-1"
+  <span
+    class="text-[9px] font-mono text-emerald-500/70 bg-emerald-950/20 border border-emerald-900/30 px-1 py-0.2 rounded"
+    title="Utilisation mémoire de l'extension (JS Heap)"
   >
-    🔄 Actualiser
-  </button>
+    ⚡ {extensionRam}
+  </span>
 </div>

@@ -41,12 +41,13 @@
               <img
                 src={`chrome-extension://${chrome.runtime.id}/_favicon/?pageUrl=${encodeURIComponent(item.url)}&size=32`}
                 alt=""
-                class="w-3.5 h-3.5 rounded shrink-0 grayscale opacity-60 group-hover:grayscale-0 group-hover:opacity-100 transition-all"
+                class="w-3.5 h-3.5 rounded shrink-0 grayscale opacity-60 group-hover:grayscale-80 group-hover:opacity-100 transition-all"
                 onerror={() => (isImageValid = false)}
               />
             {/if}
-            <span class="truncate text-zinc-400 font-medium" title={item.title}
-              >{item.title}</span
+            <span
+              class="truncate text-zinc-400 font-medium group-hover:text-zinc-300"
+              title={item.title}>{item.title}</span
             >
           </div>
 
@@ -59,7 +60,7 @@
             <div class="relative group/tooltip inline-block">
               <button
                 onclick={() => onDelete(item.id)}
-                class="text-[10px] text-zinc-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all cursor-pointer"
+                class="text-[10px] text-zinc-400 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all cursor-pointer"
               >
                 x
               </button>

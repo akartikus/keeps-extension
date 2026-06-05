@@ -10,18 +10,22 @@
   /* global chrome */
 
   /** @type {Array<{id: number, title: string, discarded: boolean}>} */
-  let tabs = [];
-
+  let tabs = $state([]);
   /** @type {any[]} */
-  let icebox = []; // Notre liste d'onglets "sauvegardés au frais"
+  let icebox = $state([]);
 
   let appName = 'Keeps';
   let restoringCount = 0;
+
+  let extensionRam = $state('0.0 MB');
 
   onMount(() => {
     loadIcebox().then(() => {
       refreshTabs();
     });
+
+    updateExtensionRam();
+    const ramInterval = setInterval(updateExtensionRam, 5000);
 
     //  Listen to icebox local storage change
     if (typeof chrome !== 'undefined' && chrome.storage) {
@@ -35,6 +39,7 @@
         }
       });
     }
+
     if (typeof chrome !== 'undefined' && chrome.tabs) {
       // Déclenché quand un onglet est créé (nouvel onglet)
       chrome.tabs.onCreated.addListener(() => {
@@ -58,6 +63,11 @@
         }
       });
     }
+
+    // 🌟 Nettoyage obligatoire du setInterval lors du démontage du composant
+    return () => {
+      clearInterval(ramInterval);
+    };
   });
 
   // @ts-ignore
@@ -151,6 +161,26 @@
     const updatedIcebox = icebox.filter((t) => t.id !== itemId);
     chrome.storage.local.set({ icebox: updatedIcebox });
   }
+
+  function updateExtensionRam() {
+    try {
+      // @ts-ignore
+      if (typeof performance !== 'undefined' && performance.memory) {
+        // @ts-ignore
+        const usedJSHeapSize = performance.memory.usedJSHeapSize;
+        const ramInMB = (usedJSHeapSize / (1024 * 1024)).toFixed(1);
+        extensionRam = `${ramInMB} MB`;
+      } else {
+        extensionRam = 'N/A';
+      }
+    } catch (error) {
+      console.warn(
+        "L'API performance.memory est bloquée ou indisponible :",
+        error,
+      );
+      extensionRam = 'N/A';
+    }
+  }
 </script>
 
 <main
@@ -159,7 +189,7 @@
   <!-- ZONE SUPÉRIEURE : Header & Onglets Actifs -->
   <div class="space-y-6 overflow-y-auto flex-1 pr-1">
     <!-- Header -->
-    <Header {appName} onRefresh={() => refreshTabs()}></Header>
+    <Header {appName} {extensionRam}></Header>
 
     <!-- Section Onglets Actifs -->
     <div class="space-y-3">
