@@ -6,10 +6,11 @@
   import Icebox from './components/Icebox.svelte';
   import { fade, slide } from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
+  import Workspaces from './components/Workspaces.svelte';
 
   /* global chrome */
 
-  /** @type {Array<{id: number, title: string, discarded: boolean}>} */
+  /** @type {Array<{id: number, title: string, discarded: boolean, favIconUrl: string, url: string}>} */
   let tabs = $state([]);
   /** @type {any[]} */
   let icebox = $state([]);
@@ -19,8 +20,12 @@
 
   let extensionRam = $state('0.0 MB');
 
+  /** @type {any[]} */
+  let workspaces = $state([]);
+
   onMount(() => {
-    loadIcebox().then(() => {
+    // Waiting for all data stored ready
+    Promise.all([loadIcebox(), loadWorkspaces()]).then(() => {
       refreshTabs();
     });
 
@@ -30,11 +35,17 @@
     //  Listen to icebox local storage change
     if (typeof chrome !== 'undefined' && chrome.storage) {
       chrome.storage.onChanged.addListener((changes, areaName) => {
-        if (areaName === 'local' && changes.icebox) {
-          // @ts-ignore
-          icebox = changes.icebox.newValue || [];
-          if (restoringCount === 0) {
-            refreshTabs();
+        if (areaName === 'local') {
+          // Gestion de la Icebox
+          if (changes.icebox) {
+            // @ts-ignore
+            icebox = changes.icebox.newValue || [];
+            if (restoringCount === 0) refreshTabs();
+          }
+
+          if (changes.workspaces) {
+            // @ts-ignore
+            workspaces = changes.workspaces.newValue || [];
           }
         }
       });
@@ -64,10 +75,22 @@
       });
     }
 
-    // 🌟 Nettoyage obligatoire du setInterval lors du démontage du composant
+    // Nettoyage obligatoire du setInterval lors du démontage du composant
     return () => {
       clearInterval(ramInterval);
     };
+
+    loadWorkspaces();
+
+    // Écouter également les changements sur les workspaces dans le stockage local
+    if (typeof chrome !== 'undefined' && chrome.storage) {
+      chrome.storage.onChanged.addListener((changes, areaName) => {
+        if (areaName === 'local' && changes.workspaces) {
+          // @ts-ignore
+          workspaces = changes.workspaces.newValue || [];
+        }
+      });
+    }
   });
 
   // @ts-ignore
@@ -179,6 +202,147 @@
       extensionRam = 'N/A';
     }
   }
+
+  // Modifiée pour retourner une Promesse propre
+  function loadWorkspaces() {
+    return new Promise((resolve) => {
+      if (typeof chrome !== 'undefined' && chrome.storage) {
+        chrome.storage.local.get({ workspaces: [] }, (result) => {
+          // @ts-ignore
+          workspaces = result.workspaces || [];
+          // @ts-ignore
+          resolve(); // On signale que les données sont chargées
+        });
+      } else {
+        // @ts-ignore
+        resolve();
+      }
+    });
+  }
+
+  // 1. ASPIRER ET SAUVEGARDER LE CONTEXTE ACTUEL (CORRIGÉ)
+  function saveCurrentContext(customName = null) {
+    if (tabs.length === 0) return; // Rien à sauvegarder
+
+    const timestamp = new Date();
+    const workspaceName =
+      customName ||
+      `Espace du ${timestamp.toLocaleDateString()} - ${timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+
+    // On prépare l'objet Workspace avec un instantané des onglets actuels
+    const newWorkspace = {
+      id: Date.now(),
+      name: workspaceName,
+      tabs: tabs.map((t) => ({
+        title: t.title,
+        url: t.url,
+        favIconUrl: t.favIconUrl,
+      })),
+      createdAt: timestamp.toISOString(),
+    };
+
+    const updatedWorkspaces = [...workspaces, newWorkspace];
+
+    // Sauvegarde dans le stockage local de Chrome
+    chrome.storage.local.set({ workspaces: updatedWorkspaces }, () => {
+      if (typeof chrome !== 'undefined' && chrome.tabs) {
+        // 🌟 LA PROTECTION : On ouvre d'abord un onglet vide pour empêcher le navigateur de se fermer
+        chrome.tabs.create({ active: true }, () => {
+          // Une fois l'onglet de secours créé, on peut fermer TOUS les anciens onglets en toute sécurité
+          const tabIds = tabs.map((t) => t.id).filter((id) => id !== undefined);
+          if (tabIds.length > 0) {
+            // @ts-ignore
+            chrome.tabs.remove(tabIds, () => {
+              refreshTabs();
+            });
+          }
+        });
+      }
+    });
+  }
+
+  // 2. RESTAURER UN WORKSPACE (CORRIGÉ ET SÉCURISÉ CONTRE LA FERMETURE)
+  /** @param {any} workspaceToRestore */
+  function restoreWorkspace(workspaceToRestore) {
+    if (typeof chrome !== 'undefined' && chrome.tabs) {
+      if (workspaceToRestore.tabs.length === 0) return;
+
+      // Bloquer temporairement les rafraîchissements automatiques pendant la grosse bascule
+      restoringCount++;
+
+      // --- 1. SÉCURITÉ : Sauvegarde automatique de la session en cours ---
+      if (tabs.length > 0) {
+        const timestamp = new Date();
+        // 🌟 UNIFICATION : Même format que la création manuelle, sans la mention "Sauvegarde Auto"
+        const cleanName = `Espace du ${timestamp.toLocaleDateString()} - ${timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+
+        const backupWorkspace = {
+          id: Date.now() - 1, // Évite les collisions d'ID
+          name: cleanName,
+          tabs: tabs.map((t) => ({
+            title: t.title,
+            url: t.url,
+            favIconUrl: t.favIconUrl,
+          })),
+          createdAt: timestamp.toISOString(),
+        };
+
+        const nextWorkspaces = [
+          ...workspaces.filter((w) => w.id !== workspaceToRestore.id),
+          backupWorkspace,
+        ];
+        chrome.storage.local.set({ workspaces: nextWorkspaces });
+      } else {
+        const nextWorkspaces = workspaces.filter(
+          (w) => w.id !== workspaceToRestore.id,
+        );
+        chrome.storage.local.set({ workspaces: nextWorkspaces });
+      }
+
+      // --- 2. LA STRATÉGIE DU PIVOT PAR INJECTION ---
+      const firstTab = workspaceToRestore.tabs[0];
+      const remainingTabs = workspaceToRestore.tabs.slice(1);
+
+      chrome.tabs.create({ url: firstTab.url, active: true }, (anchorTab) => {
+        const currentTabIds = tabs
+          .map((t) => t.id)
+          .filter((id) => id !== undefined && id !== anchorTab.id);
+
+        const proceedWithRestore = () => {
+          if (remainingTabs.length === 0) {
+            restoringCount = Math.max(0, restoringCount - 1);
+            refreshTabs();
+            return;
+          }
+
+          chrome.runtime.sendMessage(
+            {
+              action: 'RESTORE_WORKSPACE_TABS',
+              tabs: remainingTabs,
+            },
+            (response) => {
+              restoringCount = Math.max(0, restoringCount - 1);
+              refreshTabs();
+            },
+          );
+        };
+
+        if (currentTabIds.length > 0) {
+          // @ts-ignore
+          chrome.tabs.remove(currentTabIds, proceedWithRestore);
+        } else {
+          proceedWithRestore();
+        }
+      });
+    }
+  }
+
+  // 3. SUPPRIMER DÉFINITIVEMENT UN WORKSPACE
+  /** @param {any} id */
+  function deleteWorkspace(id) {
+    const nextWorkspaces = workspaces.filter((w) => w.id !== id);
+    chrome.storage.local.set({ workspaces: nextWorkspaces });
+  }
 </script>
 
 <main
@@ -218,11 +382,21 @@
     </div>
   </div>
 
-  <Icebox
-    {icebox}
-    onRestore={(tab) => restoreFromIcebox(tab)}
-    onDelete={(id) => deleteFromIcebox(id)}
-  ></Icebox>
+  <div class="shrink-0">
+    <Workspaces
+      {workspaces}
+      activeTabsCount={tabs.length}
+      onSaveContext={() => saveCurrentContext()}
+      onRestore={(ws) => restoreWorkspace(ws)}
+      onDelete={(id) => deleteWorkspace(id)}
+    />
+
+    <Icebox
+      {icebox}
+      onRestore={(tab) => restoreFromIcebox(tab)}
+      onDelete={(id) => deleteFromIcebox(id)}
+    ></Icebox>
+  </div>
 </main>
 
 <style>

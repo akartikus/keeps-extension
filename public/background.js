@@ -52,25 +52,69 @@ chrome.commands.onCommand.addListener((command) => {
 
 // Écouter les messages en provenance de l'UI Svelte
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  // Action 1 : Récupérer tous les onglets de la fenêtre actuelle
-  if (message.action === 'GET_TABS') {
-    chrome.tabs.query({ currentWindow: true }, (tabs) => {
-      sendResponse({ tabs: tabs });
-    });
-    return true; // Garde le canal ouvert pour la réponse asynchrone
-  }
-
-  // Action 2 : Mettre en veille (hiberner) un onglet spécifique
-  if (message.action === 'FREEZE_TAB') {
-    chrome.tabs
-      .discard(message.tabId)
-      .then((discardedTab) => {
-        sendResponse({ success: true, tab: discardedTab });
-      })
-      .catch((err) => {
-        sendResponse({ success: false, error: err.message });
+  switch (message.action) {
+    // Action 1 : Récupérer tous les onglets de la fenêtre actuelle
+    case 'GET_TABS':
+      chrome.tabs.query({ currentWindow: true }, (tabs) => {
+        sendResponse({ tabs: tabs });
       });
-    return true;
+      return true; // Garde le canal ouvert pour la réponse asynchrone
+
+    // Action 2 : Mettre en veille (hiberner) un onglet spécifique
+    case 'FREEZE_TAB':
+      chrome.tabs
+        .discard(message.tabId)
+        .then((discardedTab) => {
+          sendResponse({ success: true, tab: discardedTab });
+        })
+        .catch((err) => {
+          sendResponse({ success: false, error: err.message });
+        });
+      return true;
+
+    // Dans votre background.js
+    case 'RESTORE_WORKSPACE_TABS':
+      (async () => {
+        try {
+          for (const tabData of message.tabs) {
+            // 1. On crée l'onglet en arrière-plan avec sa vraie URL
+            const newTab = await chrome.tabs.create({
+              url: tabData.url,
+              active: false,
+            });
+
+            // 2. On crée un écouteur dynamique pour CET onglet précis
+            const discardListener = (tabId, changeInfo, tab) => {
+              if (
+                tabId === newTab.id &&
+                (changeInfo.status === 'loading' ||
+                  changeInfo.status === 'complete')
+              ) {
+                // Dès que l'onglet a une URL valide attachée (autre que about:blank)
+                if (tab.url && !tab.url.startsWith('about:')) {
+                  // On le fige immédiatement pour couper la RAM
+                  chrome.tabs
+                    .discard(tabId)
+                    .catch((e) =>
+                      console.log('Note: Onglet déjà gelé ou géré.'),
+                    );
+
+                  // On détruit cet écouteur spécifique pour ne pas surcharger la mémoire
+                  chrome.tabs.onUpdated.removeListener(discardListener);
+                }
+              }
+            };
+
+            // On active l'écouteur pour cet onglet
+            chrome.tabs.onUpdated.addListener(discardListener);
+          }
+          sendResponse({ success: true });
+        } catch (error) {
+          console.error('Erreur lors de la restauration du workspace:', error);
+          sendResponse({ success: false, error: error.message });
+        }
+      })();
+      return true; // Important pour l'asynchronisme
   }
 });
 
