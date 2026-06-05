@@ -86,15 +86,13 @@
       }
     });
   }
-
   function refreshTabs() {
     if (typeof chrome !== 'undefined' && chrome.runtime) {
       chrome.runtime.sendMessage({ action: 'GET_TABS' }, (response) => {
         if (response && response.tabs) {
-          // On filtre les onglets affichés pour ne pas montrer ceux qui sont déjà dans la Icebox
-          const iceboxUrls = icebox.map((t) => t.url);
+          // Les onglets vivants affichent TOUS les onglets de la fenêtre actuelle, sans exception.
           // @ts-ignore
-          tabs = response.tabs.filter((t) => !iceboxUrls.includes(t.url));
+          tabs = response.tabs;
         }
       });
     }
