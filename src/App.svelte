@@ -35,6 +35,29 @@
         }
       });
     }
+    if (typeof chrome !== 'undefined' && chrome.tabs) {
+      // Déclenché quand un onglet est créé (nouvel onglet)
+      chrome.tabs.onCreated.addListener(() => {
+        if (restoringCount === 0) refreshTabs();
+      });
+
+      // Déclenché quand un onglet est fermé
+      chrome.tabs.onRemoved.addListener(() => {
+        if (restoringCount === 0) refreshTabs();
+      });
+
+      // Déclenché quand un onglet change d'URL, de titre ou se "réveille" (devient actif/complet)
+      chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+        // On rafraîchit si le statut passe à complete ou si l'onglet est mis en veille (discarded)
+        if (
+          (changeInfo.status === 'complete' ||
+            changeInfo.discarded !== undefined) &&
+          restoringCount === 0
+        ) {
+          refreshTabs();
+        }
+      });
+    }
   });
 
   // @ts-ignore
