@@ -27,7 +27,8 @@
     {#if !tab.discarded}
       <button
         onclick={() => onFreeze(tab.id)}
-        class="text-[10px] bg-sky-950/40 text-sky-400 border border-sky-900/50 px-2 py-1 rounded-md"
+        class="text-[10px] bg-sky-950/40 text-sky-400 border border-sky-900/50 px-2 py-1 rounded-md
+             hover:bg-sky-900/60 hover:scale-105 active:scale-95 transition-all duration-150"
       >
         ❄️ Geler
       </button>
@@ -35,7 +36,8 @@
 
     <button
       onclick={() => onPutToIcebox(tab)}
-      class="text-[10px] bg-zinc-800 text-zinc-300 px-2 py-1 rounded-md"
+      class="text-[10px] bg-zinc-800 text-zinc-300 px-2 py-1 rounded-md
+           hover:bg-zinc-700 hover:text-white active:bg-zinc-600 transition-colors duration-150"
     >
       📦 Mettre au frais
     </button>
