@@ -182,27 +182,25 @@
 </script>
 
 <main
-  class="p-6 h-screen flex flex-col justify-between bg-background text-zinc-100 select-none"
+  class="p-6 h-screen flex flex-col justify-between bg-background text-zinc-100 select-none overflow-hidden"
 >
-  <!-- ZONE SUPÉRIEURE : Header & Onglets Actifs -->
-  <div class="space-y-6 overflow-y-auto flex-1 pr-1">
-    <!-- Header -->
+  <div class="flex-1 flex flex-col min-h-0 space-y-6 mb-4">
     <Header {appName} {extensionRam}></Header>
 
-    <!-- Section Onglets Actifs -->
-    <div class="space-y-3">
-      <h2 class="text-xs font-medium text-zinc-400 tracking-wide uppercase">
+    <div class="flex-1 flex flex-col min-h-0 space-y-3">
+      <h2
+        class="text-xs font-medium text-zinc-400 tracking-wide uppercase shrink-0"
+      >
         Espace de travail actuel ({tabs.length})
       </h2>
 
       {#if tabs.length === 0}
-        <!-- 🌌 EMPTY STATE : Si aucun onglet n'est ouvert (ou s'ils sont tous au frais) -->
-        <EmptyState></EmptyState>
+        <div class="flex-1 overflow-y-auto">
+          <EmptyState></EmptyState>
+        </div>
       {:else}
-        <!-- Liste des Onglets -->
-        <div class="space-y-2">
+        <div class="flex-1 overflow-y-auto space-y-2 pr-1.5 scroll-smooth">
           {#each tabs as tab (tab.id)}
-            <!--  Ne pas appliquer l`qnimation si c`est un freeze, prevoire une liste de freeze a mettre a jour correctement -->
             <div
               in:slide={{ duration: 200, easing: cubicOut }}
               out:fade={{ duration: 150 }}
@@ -220,10 +218,38 @@
     </div>
   </div>
 
-  <!-- ZONE INFÉRIEURE : La Icebox Fixe en bas -->
   <Icebox
     {icebox}
     onRestore={(tab) => restoreFromIcebox(tab)}
     onDelete={(id) => deleteFromIcebox(id)}
   ></Icebox>
 </main>
+
+<style>
+  :global(::-webkit-scrollbar) {
+    width: 6px; /* Largeur de la barre verticale (ultra-fine) */
+    height: 6px; /* Hauteur de la barre horizontale */
+  }
+
+  /* Le fond de la piste de défilement (invisible ou très sombre) */
+  :global(::-webkit-scrollbar-track) {
+    background: transparent;
+  }
+
+  /* La poignée (le "vrai" curseur qui bouge) */
+  :global(::-webkit-scrollbar-thumb) {
+    background-color: var(--color-zinc-800, #27272a); /* Couleur Zinc-800 */
+    border-radius: 9999px; /* Bords parfaitement arrondis */
+    border: 1px solid transparent; /* Donne un effet d'espacement si besoin */
+  }
+
+  /* Au survol de la poignée, elle s'éclaire légèrement */
+  :global(::-webkit-scrollbar-thumb:hover) {
+    background-color: var(--color-zinc-700, #3f3f46); /* Couleur Zinc-700 */
+  }
+
+  /* Optionnel : Masquer les boutons fléchés haut/bas souvent inesthétiques */
+  :global(::-webkit-scrollbar-button) {
+    display: none;
+  }
+</style>
