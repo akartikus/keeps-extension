@@ -222,7 +222,19 @@
 
   // 1. ASPIRER ET SAUVEGARDER LE CONTEXTE ACTUEL (CORRIGÉ)
   function saveCurrentContext(customName = null) {
-    if (tabs.length === 0) return; // Rien à sauvegarder
+    // 1. On récupère les onglets actuels (en enlevant les proxys Svelte)
+    const tabsToSave = Array.from(tabs).map((t) => ({
+      title: t.title,
+      url: t.url,
+      favIconUrl: t.favIconUrl,
+    }));
+
+    if (tabsToSave.length === 0) {
+      console.warn(
+        'Création bloquée : Impossible de sauvegarder un espace vide.',
+      );
+      return;
+    }
 
     const timestamp = new Date();
     const workspaceName =
@@ -265,7 +277,10 @@
   /** @param {any} workspaceToRestore */
   function restoreWorkspace(workspaceToRestore) {
     if (typeof chrome !== 'undefined' && chrome.tabs) {
-      if (workspaceToRestore.tabs.length === 0) return;
+      // 🌟 PROTECTION SVELTE 5 : On extrait un snapshot brut ou on force la conversion en vrai tableau
+      // Cela supprime le Proxy réactif temporairement pour les manipulations de méthodes de tableaux.
+      const rawTabs = Array.from(workspaceToRestore.tabs || []);
+      if (rawTabs.length === 0) return;
 
       // Bloquer temporairement les rafraîchissements automatiques pendant la grosse bascule
       restoringCount++;
@@ -273,13 +288,13 @@
       // --- 1. SÉCURITÉ : Sauvegarde automatique de la session en cours ---
       if (tabs.length > 0) {
         const timestamp = new Date();
-        // 🌟 UNIFICATION : Même format que la création manuelle, sans la mention "Sauvegarde Auto"
         const cleanName = `Espace du ${timestamp.toLocaleDateString()} - ${timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
 
         const backupWorkspace = {
-          id: Date.now() - 1, // Évite les collisions d'ID
+          id: Date.now() - 1,
           name: cleanName,
-          tabs: tabs.map((t) => ({
+          // Ici aussi, on extrait proprement la donnée vivante
+          tabs: Array.from(tabs).map((t) => ({
             title: t.title,
             url: t.url,
             favIconUrl: t.favIconUrl,
@@ -299,12 +314,13 @@
         chrome.storage.local.set({ workspaces: nextWorkspaces });
       }
 
-      // --- 2. LA STRATÉGIE DU PIVOT PAR INJECTION ---
-      const firstTab = workspaceToRestore.tabs[0];
-      const remainingTabs = workspaceToRestore.tabs.slice(1);
+      // --- 2. LA STRATÉGIE DU PIVOT PAR INJECTION (Sur notre tableau purifié) ---
+      const firstTab = rawTabs[0];
+      const remainingTabs = rawTabs.slice(1); // 🌟 Plus aucun bug ici !
 
       chrome.tabs.create({ url: firstTab.url, active: true }, (anchorTab) => {
-        const currentTabIds = tabs
+        // Nettoyage sécurisé
+        const currentTabIds = Array.from(tabs)
           .map((t) => t.id)
           .filter((id) => id !== undefined && id !== anchorTab.id);
 

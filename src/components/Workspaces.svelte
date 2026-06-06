@@ -11,6 +11,11 @@
   /** @type {WorkspacesProps} */
   let { workspaces, activeTabsCount, onSaveContext, onRestore, onDelete } =
     $props();
+
+  // On ne garde à l'affichage QUE les espaces qui ont au moins 1 onglet
+  let validWorkspaces = $derived(
+    workspaces.filter((ws) => ws.tabs && ws.tabs.length > 0),
+  );
 </script>
 
 <div class="border-t border-zinc-800/60 pt-4 mt-4 bg-background shrink-0">
@@ -22,10 +27,11 @@
       <span
         class="font-mono bg-stone-950 text-stone-500 px-1.5 py-0.2 rounded-full text-[10px] border border-stone-900/30"
       >
-        {workspaces.length}
+        {validWorkspaces.length}
       </span>
     </span>
 
+    <!-- Sécurité renforcée sur le nombre d'onglets actifs -->
     {#if activeTabsCount > 0}
       <button
         onclick={onSaveContext}
@@ -36,13 +42,14 @@
     {/if}
   </div>
 
-  {#if workspaces.length === 0}
+  <!-- On utilise maintenant notre liste sécurisée "validWorkspaces" -->
+  {#if validWorkspaces.length === 0}
     <p class="text-xs text-zinc-600 italic py-1">
-      Aucun espace de travail sauvegardé.
+      Aucun espace de travail valide sauvegardé.
     </p>
   {:else}
     <div class="max-h-[150px] overflow-y-auto space-y-1.5 pr-1.5 scroll-smooth">
-      {#each workspaces as ws (ws.id)}
+      {#each validWorkspaces as ws (ws.id)}
         <div
           class="flex items-center justify-between p-2 rounded-lg bg-stone-950/40 border border-stone-900/60 hover:border-stone-800/60 text-[11px] group transition-all duration-150"
         >
