@@ -4,10 +4,11 @@
    * @property {any} tab
    * @property {(id: number) => void} onFreeze
    * @property {(tab: any) => void} onPutToIcebox
+   * @property {(tab: any) => void} onFocus
    */
 
   /** @type {Props} */
-  let { tab, onFreeze, onPutToIcebox } = $props();
+  let { tab, onFreeze, onPutToIcebox, onFocus } = $props();
 
   /* global chrome */
   // Génère l'URL sécurisée du favicon via l'API Chrome
@@ -19,8 +20,11 @@
   let isImageValid = $state(true);
 </script>
 
+<!-- svelte-ignore a11y_click_events_have_key_events -->
+<!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
-  class="flex items-center justify-between p-2.5 rounded-xl bg-surface/30 border border-zinc-800 hover:border-zinc-600/80 transition-colors duration-150 text-xs group"
+  onclick={onFocus}
+  class="flex items-center justify-between p-2 rounded-lg bg-zinc-900/40 hover:bg-zinc-900/80 border border-zinc-800/50 transition-all group select-none focus:outline-none"
 >
   <div class="flex items-center min-w-0 pr-2 gap-2.5">
     {#if faviconUrl && isImageValid}

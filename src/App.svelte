@@ -343,6 +343,17 @@
     chrome.storage.local.set({ workspaces: nextWorkspaces });
   }
 
+  /** @param {any} tab */
+  function focusTab(tab) {
+    if (typeof chrome !== 'undefined' && chrome.tabs) {
+      // 1. Activer l'onglet spécifique dans sa fenêtre
+      chrome.tabs.update(tab.id, { active: true }, () => {
+        // 2. Mettre la fenêtre qui contient cet onglet au premier plan (focus global)
+        chrome.windows.update(tab.windowId, { focused: true });
+      });
+    }
+  }
+
   function updateBrowserRamUsage() {
     if (
       typeof chrome !== 'undefined' &&
@@ -406,6 +417,7 @@
                 {tab}
                 onFreeze={(e) => freezeTab(e)}
                 onPutToIcebox={(e) => sendToIcebox(e)}
+                onFocus={() => focusTab(tab)}
               />
             </div>
           {/each}
