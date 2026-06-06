@@ -19,6 +19,7 @@
   let restoringCount = 0;
 
   let browserRamPercent = $state(0);
+  // @ts-ignore
   let totalSystemMemoryBytes = 0;
   let browserRamMB = $state('0 MB');
 
@@ -74,6 +75,7 @@
         if (restoringCount === 0) refreshTabs();
       });
 
+      // @ts-ignore
       // @ts-ignore
       chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
         // On attend bien que le statut passe à 'complete' (page chargée)
@@ -204,7 +206,7 @@
 
   // 1. ASPIRER ET SAUVEGARDER LE CONTEXTE ACTUEL (CORRIGÉ)
   function saveCurrentContext(customName = null) {
-    // 1. On récupère les onglets actuels (en enlevant les proxys Svelte)
+    // On extrait proprement la donnée vivante des onglets actuels
     const tabsToSave = Array.from(tabs).map((t) => ({
       title: t.title,
       url: t.url,
@@ -223,115 +225,143 @@
       customName ||
       `Espace du ${timestamp.toLocaleDateString()} - ${timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
 
-    // On prépare l'objet Workspace avec un instantané des onglets actuels
+    // On prépare le nouvel objet Workspace
     const newWorkspace = {
       id: Date.now(),
       name: workspaceName,
-      tabs: tabs.map((t) => ({
-        title: t.title,
-        url: t.url,
-        favIconUrl: t.favIconUrl,
-      })),
+      tabs: tabsToSave,
       createdAt: timestamp.toISOString(),
     };
 
-    const updatedWorkspaces = [...workspaces, newWorkspace];
+    // On va chercher les vrais workspaces sur le disque avant d'écrire
+    if (typeof chrome !== 'undefined' && chrome.storage) {
+      chrome.storage.local.get({ workspaces: [] }, (result) => {
+        const currentWorkspaces = result.workspaces || [];
 
-    // Sauvegarde dans le stockage local de Chrome
-    chrome.storage.local.set({ workspaces: updatedWorkspaces }, () => {
-      if (typeof chrome !== 'undefined' && chrome.tabs) {
-        // 🌟 LA PROTECTION : On ouvre d'abord un onglet vide pour empêcher le navigateur de se fermer
-        chrome.tabs.create({ active: true }, () => {
-          // Une fois l'onglet de secours créé, on peut fermer TOUS les anciens onglets en toute sécurité
-          const tabIds = tabs.map((t) => t.id).filter((id) => id !== undefined);
-          if (tabIds.length > 0) {
-            // @ts-ignore
-            chrome.tabs.remove(tabIds, () => {
-              refreshTabs();
-            });
-          }
+        // On fusionne les anciens workspaces du disque avec le nouveau
+        // @ts-ignore
+        const updatedWorkspaces = [...currentWorkspaces, newWorkspace];
+
+        // On sauvegarde la liste complète et fusionnée
+        chrome.storage.local.set({ workspaces: updatedWorkspaces }, () => {
+          // PROTECTION : On ouvre d'abord un onglet vide pour empêcher le navigateur de se fermer
+          chrome.tabs.create({ active: true }, () => {
+            // Une fois l'onglet de secours créé, on ferme les anciens
+            const tabIds = tabs
+              .map((t) => t.id)
+              .filter((id) => id !== undefined);
+            if (tabIds.length > 0) {
+              // @ts-ignore
+              chrome.tabs.remove(tabIds, () => {
+                refreshTabs();
+              });
+            }
+          });
         });
-      }
-    });
+      });
+    }
   }
 
   // 2. RESTAURER UN WORKSPACE (CORRIGÉ ET SÉCURISÉ CONTRE LA FERMETURE)
   /** @param {any} workspaceToRestore */
+  // 2. RESTAURER UN WORKSPACE (CORRIGÉ : INSTANTANÉ DES ONGLETS SÉCURISÉ)
+  /** @param {any} workspaceToRestore */
   function restoreWorkspace(workspaceToRestore) {
-    if (typeof chrome !== 'undefined' && chrome.tabs) {
-      // 🌟 PROTECTION SVELTE 5 : On extrait un snapshot brut ou on force la conversion en vrai tableau
-      // Cela supprime le Proxy réactif temporairement pour les manipulations de méthodes de tableaux.
-      const rawTabs = Array.from(workspaceToRestore.tabs || []);
-      if (rawTabs.length === 0) return;
+    if (typeof chrome !== 'undefined' && chrome.tabs && chrome.storage) {
+      // On fige IMMÉDIATEMENT la session actuelle en texte brut.
+      // En faisant un JSON stringify/parse, on détruit le lien avec le Proxy réactif de Svelte.
+      // Quoi qu'il arrive aux onglets après cette ligne, notre snapshot ne bougera pas.
+      const currentTabsSnapshot = JSON.parse(JSON.stringify(tabs));
 
-      // Bloquer temporairement les rafraîchissements automatiques pendant la grosse bascule
+      const rawTabsToRestore = Array.from(workspaceToRestore.tabs || []);
+      if (rawTabsToRestore.length === 0) return;
+
+      // Bloquer temporairement les rafraîchissements automatiques
       restoringCount++;
 
-      // --- 1. SÉCURITÉ : Sauvegarde automatique de la session en cours ---
-      if (tabs.length > 0) {
-        const timestamp = new Date();
-        const cleanName = `Espace du ${timestamp.toLocaleDateString()} - ${timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+      // ÉTAPE 1 : Récupérer la liste propre du stockage Chrome
+      chrome.storage.local.get({ workspaces: [] }, (result) => {
+        const currentWorkspaces = result.workspaces || [];
 
-        const backupWorkspace = {
-          id: Date.now() - 1,
-          name: cleanName,
-          // Ici aussi, on extrait proprement la donnée vivante
-          tabs: Array.from(tabs).map((t) => ({
-            title: t.title,
-            url: t.url,
-            favIconUrl: t.favIconUrl,
-          })),
-          createdAt: timestamp.toISOString(),
-        };
+        let nextWorkspaces = [];
 
-        const nextWorkspaces = [
-          ...workspaces.filter((w) => w.id !== workspaceToRestore.id),
-          backupWorkspace,
-        ];
-        chrome.storage.local.set({ workspaces: nextWorkspaces });
-      } else {
-        const nextWorkspaces = workspaces.filter(
-          (w) => w.id !== workspaceToRestore.id,
-        );
-        chrome.storage.local.set({ workspaces: nextWorkspaces });
-      }
+        // --- Sauvegarde automatique de la session qui va être fermée ---
+        // On utilise notre snapshot figé à la place de la variable réactive "tabs"
+        if (currentTabsSnapshot && currentTabsSnapshot.length > 0) {
+          const timestamp = new Date();
+          const cleanName = `Espace du ${timestamp.toLocaleDateString()} - ${timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
 
-      // --- 2. LA STRATÉGIE DU PIVOT PAR INJECTION (Sur notre tableau purifié) ---
-      const firstTab = rawTabs[0];
-      const remainingTabs = rawTabs.slice(1); // 🌟 Plus aucun bug ici !
-
-      chrome.tabs.create({ url: firstTab.url, active: true }, (anchorTab) => {
-        // Nettoyage sécurisé
-        const currentTabIds = Array.from(tabs)
-          .map((t) => t.id)
-          .filter((id) => id !== undefined && id !== anchorTab.id);
-
-        const proceedWithRestore = () => {
-          if (remainingTabs.length === 0) {
-            restoringCount = Math.max(0, restoringCount - 1);
-            refreshTabs();
-            return;
-          }
-
-          chrome.runtime.sendMessage(
-            {
-              action: 'RESTORE_WORKSPACE_TABS',
-              tabs: remainingTabs,
-            },
+          const backupWorkspace = {
+            id: Date.now(),
+            name: cleanName,
             // @ts-ignore
-            (response) => {
-              restoringCount = Math.max(0, restoringCount - 1);
-              refreshTabs();
+            tabs: currentTabsSnapshot.map((t) => ({
+              title: t.title,
+              url: t.url,
+              favIconUrl: t.favIconUrl,
+            })),
+            createdAt: timestamp.toISOString(),
+          };
+
+          // On garde les autres workspaces intacts et on ajoute le backup
+          nextWorkspaces = [
+            // @ts-ignore
+            ...currentWorkspaces.filter((w) => w.id !== workspaceToRestore.id),
+            backupWorkspace,
+          ];
+        } else {
+          // @ts-ignore
+          nextWorkspaces = currentWorkspaces.filter(
+            // @ts-ignore
+            (w) => w.id !== workspaceToRestore.id,
+          );
+        }
+
+        // ÉTAPE 2 : On enregistre la nouvelle liste sur le disque
+        chrome.storage.local.set({ workspaces: nextWorkspaces }, () => {
+          // --- ÉTAPE 3 : RESTAURATION DES ONGLETS ---
+          const firstTab = rawTabsToRestore[0];
+          const remainingTabs = rawTabsToRestore.slice(1);
+
+          chrome.tabs.create(
+            { url: firstTab.url, active: true },
+            (anchorTab) => {
+              // On cible les anciens onglets à fermer en utilisant le snapshot figé
+              const currentTabIds = currentTabsSnapshot
+                // @ts-ignore
+                .map((t) => t.id)
+                // @ts-ignore
+                .filter((id) => id !== undefined && id !== anchorTab.id);
+
+              const proceedWithRestore = () => {
+                if (remainingTabs.length === 0) {
+                  restoringCount = Math.max(0, restoringCount - 1);
+                  refreshTabs();
+                  return;
+                }
+
+                chrome.runtime.sendMessage(
+                  {
+                    action: 'RESTORE_WORKSPACE_TABS',
+                    tabs: remainingTabs,
+                  },
+                  // @ts-ignore
+                  () => {
+                    restoringCount = Math.max(0, restoringCount - 1);
+                    refreshTabs();
+                  },
+                );
+              };
+
+              if (currentTabIds.length > 0) {
+                // @ts-ignore
+                chrome.tabs.remove(currentTabIds, proceedWithRestore);
+              } else {
+                proceedWithRestore();
+              }
             },
           );
-        };
-
-        if (currentTabIds.length > 0) {
-          // @ts-ignore
-          chrome.tabs.remove(currentTabIds, proceedWithRestore);
-        } else {
-          proceedWithRestore();
-        }
+        });
       });
     }
   }
