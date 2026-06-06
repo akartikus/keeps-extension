@@ -18,31 +18,35 @@
   let appName = 'Keeps';
   let restoringCount = 0;
 
-  let extensionRam = $state('0.0 MB');
+  let browserRamPercent = $state(0);
+  let totalSystemMemoryBytes = 0;
+  let browserRamMB = $state('0 MB');
 
   /** @type {any[]} */
   let workspaces = $state([]);
 
   onMount(() => {
-    // Waiting for all data stored ready
+    // 1. Chargement initial séquentiel de toutes les données du disque
     Promise.all([loadIcebox(), loadWorkspaces()]).then(() => {
       refreshTabs();
     });
 
-    updateExtensionRam();
-    const ramInterval = setInterval(updateExtensionRam, 5000);
+    // 2. Boucle de surveillance de la RAM
+    updateBrowserRamUsage();
+    const ramInterval = setInterval(updateBrowserRamUsage, 4000);
 
-    //  Listen to icebox local storage change
+    // 3. Centralisation de l'écouteur unique pour le stockage local (Icebox + Workspaces)
     if (typeof chrome !== 'undefined' && chrome.storage) {
       chrome.storage.onChanged.addListener((changes, areaName) => {
         if (areaName === 'local') {
-          // Gestion de la Icebox
+          // Mise à jour de la Icebox
           if (changes.icebox) {
             // @ts-ignore
             icebox = changes.icebox.newValue || [];
             if (restoringCount === 0) refreshTabs();
           }
 
+          // Mise à jour des Workspaces
           if (changes.workspaces) {
             // @ts-ignore
             workspaces = changes.workspaces.newValue || [];
@@ -51,20 +55,29 @@
       });
     }
 
+    // 4. Écouteurs pour les mouvements d'onglets du navigateur
     if (typeof chrome !== 'undefined' && chrome.tabs) {
-      // Déclenché quand un onglet est créé (nouvel onglet)
       chrome.tabs.onCreated.addListener(() => {
         if (restoringCount === 0) refreshTabs();
       });
 
-      // Déclenché quand un onglet est fermé
       chrome.tabs.onRemoved.addListener(() => {
         if (restoringCount === 0) refreshTabs();
       });
 
-      // Déclenché quand un onglet change d'URL, de titre ou se "réveille" (devient actif/complet)
+      // 🌟 Événement déclenché quand l'utilisateur change d'onglet actif
+      chrome.tabs.onActivated.addListener(() => {
+        if (restoringCount === 0) refreshTabs();
+      });
+
+      chrome.tabs.onHighlighted.addListener(() => {
+        if (restoringCount === 0) refreshTabs();
+      });
+
+      // @ts-ignore
       chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
-        // On rafraîchit si le statut passe à complete ou si l'onglet est mis en veille (discarded)
+        // On attend bien que le statut passe à 'complete' (page chargée)
+        // ou que l'état de mise en veille change
         if (
           (changeInfo.status === 'complete' ||
             changeInfo.discarded !== undefined) &&
@@ -75,22 +88,10 @@
       });
     }
 
-    // Nettoyage obligatoire du setInterval lors du démontage du composant
+    // 5. Nettoyage unique lors du démontage (Le return doit TOUJOURS être à la toute fin)
     return () => {
       clearInterval(ramInterval);
     };
-
-    loadWorkspaces();
-
-    // Écouter également les changements sur les workspaces dans le stockage local
-    if (typeof chrome !== 'undefined' && chrome.storage) {
-      chrome.storage.onChanged.addListener((changes, areaName) => {
-        if (areaName === 'local' && changes.workspaces) {
-          // @ts-ignore
-          workspaces = changes.workspaces.newValue || [];
-        }
-      });
-    }
   });
 
   // @ts-ignore
@@ -113,10 +114,11 @@
     if (typeof chrome !== 'undefined' && chrome.runtime) {
       chrome.runtime.sendMessage({ action: 'GET_TABS' }, (response) => {
         if (response && response.tabs) {
-          // Les onglets vivants affichent TOUS les onglets de la fenêtre actuelle, sans exception.
+          // Les onglets vivants affichent TOUS les onglets de la fenêtre actuelle
           // @ts-ignore
           tabs = response.tabs;
         }
+        updateBrowserRamUsage();
       });
     }
   }
@@ -181,26 +183,6 @@
     // Supprime définitivement sans réouvrir
     const updatedIcebox = icebox.filter((t) => t.id !== itemId);
     chrome.storage.local.set({ icebox: updatedIcebox });
-  }
-
-  function updateExtensionRam() {
-    try {
-      // @ts-ignore
-      if (typeof performance !== 'undefined' && performance.memory) {
-        // @ts-ignore
-        const usedJSHeapSize = performance.memory.usedJSHeapSize;
-        const ramInMB = (usedJSHeapSize / (1024 * 1024)).toFixed(1);
-        extensionRam = `${ramInMB} MB`;
-      } else {
-        extensionRam = 'N/A';
-      }
-    } catch (error) {
-      console.warn(
-        "L'API performance.memory est bloquée ou indisponible :",
-        error,
-      );
-      extensionRam = 'N/A';
-    }
   }
 
   // Modifiée pour retourner une Promesse propre
@@ -336,6 +318,7 @@
               action: 'RESTORE_WORKSPACE_TABS',
               tabs: remainingTabs,
             },
+            // @ts-ignore
             (response) => {
               restoringCount = Math.max(0, restoringCount - 1);
               refreshTabs();
@@ -359,13 +342,46 @@
     const nextWorkspaces = workspaces.filter((w) => w.id !== id);
     chrome.storage.local.set({ workspaces: nextWorkspaces });
   }
+
+  function updateBrowserRamUsage() {
+    if (
+      typeof chrome !== 'undefined' &&
+      chrome.runtime &&
+      chrome.runtime.sendMessage
+    ) {
+      // On demande au background de faire le travail de bas niveau
+      chrome.runtime.sendMessage({ action: 'GET_BROWSER_RAM' }, (response) => {
+        if (response && response.success) {
+          const totalBrowserBytes = response.bytes;
+          const totalSystemMemoryBytes = response.capacity;
+
+          // Calcul de l'affichage textuel (MB ou GB)
+          const ramMB = totalBrowserBytes / (1024 * 1024);
+          if (ramMB >= 1024) {
+            browserRamMB = `${(ramMB / 1024).toFixed(1)} GB`;
+          } else {
+            browserRamMB = `${Math.round(ramMB)} MB`;
+          }
+
+          // Calcul du pourcentage
+          browserRamPercent = Math.round(
+            (totalBrowserBytes / totalSystemMemoryBytes) * 100,
+          );
+        }
+      });
+    } else {
+      // Fallback pour le développement local hors extension
+      browserRamMB = '340 MB';
+      browserRamPercent = 8;
+    }
+  }
 </script>
 
 <main
   class="p-6 h-screen flex flex-col justify-between bg-background text-zinc-100 select-none overflow-hidden"
 >
   <div class="flex-1 flex flex-col min-h-0 space-y-6 mb-4">
-    <Header {appName} {extensionRam}></Header>
+    <Header {appName} ramPercent={browserRamPercent} ramValue={browserRamMB} />
 
     <div class="flex-1 flex flex-col min-h-0 space-y-3">
       <h2

@@ -3,7 +3,14 @@
   "name": "Keeps — Workspace Memory",
   "version": "0.1.0",
   "description": "Gestion minimaliste et intelligente de vos contextes mentaux.",
-  "permissions": ["sidePanel", "tabs", "storage", "favicon"],
+  "permissions": [
+    "sidePanel",
+    "tabs",
+    "storage",
+    "favicon",
+    "processes",
+    "system.memory"
+  ],
   "background": {
     "service_worker": "background.js"
   },

@@ -58,7 +58,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       chrome.tabs.query({ currentWindow: true }, (tabs) => {
         sendResponse({ tabs: tabs });
       });
-      return true; // Garde le canal ouvert pour la réponse asynchrone
+      return true;
 
     // Action 2 : Mettre en veille (hiberner) un onglet spécifique
     case 'FREEZE_TAB':
@@ -72,40 +72,32 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         });
       return true;
 
-    // Dans votre background.js
+    // Action 3 : Restaurer un espace de travail complet en mode froid
     case 'RESTORE_WORKSPACE_TABS':
       (async () => {
         try {
           for (const tabData of message.tabs) {
-            // 1. On crée l'onglet en arrière-plan avec sa vraie URL
             const newTab = await chrome.tabs.create({
               url: tabData.url,
               active: false,
             });
 
-            // 2. On crée un écouteur dynamique pour CET onglet précis
             const discardListener = (tabId, changeInfo, tab) => {
               if (
                 tabId === newTab.id &&
                 (changeInfo.status === 'loading' ||
                   changeInfo.status === 'complete')
               ) {
-                // Dès que l'onglet a une URL valide attachée (autre que about:blank)
                 if (tab.url && !tab.url.startsWith('about:')) {
-                  // On le fige immédiatement pour couper la RAM
                   chrome.tabs
                     .discard(tabId)
                     .catch((e) =>
                       console.log('Note: Onglet déjà gelé ou géré.'),
                     );
-
-                  // On détruit cet écouteur spécifique pour ne pas surcharger la mémoire
                   chrome.tabs.onUpdated.removeListener(discardListener);
                 }
               }
             };
-
-            // On active l'écouteur pour cet onglet
             chrome.tabs.onUpdated.addListener(discardListener);
           }
           sendResponse({ success: true });
@@ -114,7 +106,57 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           sendResponse({ success: false, error: error.message });
         }
       })();
-      return true; // Important pour l'asynchronisme
+      return true;
+
+    case 'GET_BROWSER_RAM':
+      (async () => {
+        try {
+          // 1. Récupérer la capacité totale de la machine à l'instant T
+          const memoryInfo = await chrome.system.memory.getInfo();
+          const totalCapacity = memoryInfo.capacity;
+
+          // 2. Récupérer l'état EN DIRECT de tous les onglets ouverts
+          chrome.tabs.query({}, (tabs) => {
+            let totalBrowserBytes = 0;
+
+            // Base fixe du navigateur
+            const BROWSER_BASE_MEMORY = 350 * 1024 * 1024; // 350 Mo
+            totalBrowserBytes += BROWSER_BASE_MEMORY;
+
+            if (tabs) {
+              tabs.forEach((tab) => {
+                if (tab.discarded) {
+                  totalBrowserBytes += 2 * 1024 * 1024; // 2 Mo pour un onglet gelé
+                } else {
+                  // 🌟 LA MAGIE DE L'ESTIMATION ULTRA-RÉALISTE :
+                  // Si l'onglet est actif (l'utilisateur est dessus), il consomme
+                  // naturellement plus de ressources au fil du temps (animations, vidéos, scroll).
+                  if (tab.active) {
+                    totalBrowserBytes += 180 * 1024 * 1024; // ~180 Mo pour l'onglet au premier plan
+                  } else {
+                    totalBrowserBytes += 85 * 1024 * 1024; // ~85 Mo pour les onglets passifs en arrière-plan
+                  }
+                }
+              });
+            }
+
+            // 3. Renvoyer les données fraîches
+            sendResponse({
+              success: true,
+              bytes: totalBrowserBytes,
+              capacity: totalCapacity,
+            });
+          });
+        } catch (error) {
+          console.error('Erreur calcul RAM:', error);
+          sendResponse({
+            success: false,
+            bytes: 450 * 1024 * 1024,
+            capacity: 16 * 1024 * 1024 * 1024,
+          });
+        }
+      })();
+      return true;
   }
 });
 
