@@ -12,7 +12,6 @@
   let { workspaces, activeTabsCount, onSaveContext, onRestore, onDelete } =
     $props();
 
-  // On ne garde à l'affichage QUE les espaces qui ont au moins 1 onglet
   let validWorkspaces = $derived(
     workspaces.filter((ws) => ws.tabs && ws.tabs.length > 0),
   );
@@ -31,7 +30,7 @@
       </span>
     </span>
 
-    <!-- Sécurité renforcée sur le nombre d'onglets actifs -->
+    <!-- Make sure to have at least an active tab-->
     {#if activeTabsCount > 0}
       <button
         onclick={onSaveContext}
@@ -42,7 +41,6 @@
     {/if}
   </div>
 
-  <!-- On utilise maintenant notre liste sécurisée "validWorkspaces" -->
   {#if validWorkspaces.length === 0}
     <p class="text-xs text-zinc-600 italic py-1">
       Aucun espace de travail valide sauvegardé.

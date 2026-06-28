@@ -11,7 +11,6 @@
   let { tab, onFreeze, onPutToIcebox, onFocus } = $props();
 
   /* global chrome */
-  // Génère l'URL sécurisée du favicon via l'API Chrome
   let faviconUrl = $derived(
     tab.url && typeof chrome !== 'undefined'
       ? `chrome-extension://${chrome.runtime.id}/_favicon/?pageUrl=${encodeURIComponent(tab.url)}&size=32`

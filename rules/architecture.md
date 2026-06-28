@@ -1,4 +1,3 @@
-# Index des Fonctionnalités de "Keeps Extension"
 
 Ce document indexe les descriptions détaillées des principales fonctionnalités de l'extension "Keeps", stockées dans le dossier `.continue/contexts/`.
 
