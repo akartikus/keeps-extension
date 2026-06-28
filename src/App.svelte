@@ -56,6 +56,15 @@
       });
     }
 
+    // 3.5 Listen for background-initiated refreshes
+    if (typeof chrome !== "undefined" && chrome.runtime) {
+      chrome.runtime.onMessage.addListener((message) => {
+        if (message.action === "REFRESH_TABS") {
+          if (restoringCount === 0) refreshTabs();
+        }
+      });
+    }
+
     // 4. Écouteurs pour les mouvements d'onglets du navigateur
     if (typeof chrome !== "undefined" && chrome.tabs) {
       chrome.tabs.onCreated.addListener(() => {
@@ -191,7 +200,7 @@
           // @ts-ignore
           workspaces = result.workspaces || [];
           // @ts-ignore
-          resolve(); 
+          resolve();
         });
       } else {
         // @ts-ignore

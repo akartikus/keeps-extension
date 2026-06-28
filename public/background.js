@@ -7,7 +7,7 @@ chrome.runtime.onInstalled.addListener(() => {
     );
 });
 
-chrome.commands.onCommand.addListener((command) => { 
+chrome.commands.onCommand.addListener((command) => {
   if (command === 'save-to-icebox') {
     // 1. Retreive active tab of the current window
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
@@ -27,7 +27,7 @@ chrome.commands.onCommand.addListener((command) => {
         const currentIcebox = result.icebox;
 
         const newIceboxItem = {
-          id: Date.now(), 
+          id: Date.now(),
           title: activeTab.title,
           url: activeTab.url,
           favIconUrl: activeTab.favIconUrl,
@@ -150,4 +150,61 @@ chrome.action.onClicked.addListener((tab) => {
   chrome.sidePanel.open({ windowId: tab.windowId }).catch(() => {
     chrome.tabs.create({ url: 'index.html' });
   });
+});
+
+const INACTIVITY_THRESHOLD_MS = 5 * 60 * 1000; 
+const CHECK_INTERVAL_MINUTES = 1; 
+
+let lastActiveTimes = {}; // {tabId: timestamp}
+chrome.tabs.query({}, (tabs) => {
+  tabs.forEach(tab => {
+    lastActiveTimes[tab.id] = Date.now();
+  });
+});
+
+
+chrome.tabs.onActivated.addListener((activeInfo) => {
+  lastActiveTimes[activeInfo.tabId] = Date.now();
+});
+
+chrome.tabs.onRemoved.addListener((tabId) => {
+  delete lastActiveTimes[tabId];
+});
+
+async function checkInactiveTabs() {
+  const now = Date.now();
+  try {
+    const tabs = await chrome.tabs.query({});
+    for (const tab of tabs) {
+      if (
+        tab.active ||
+        tab.discarded ||
+        tab.url.startsWith('chrome://') ||
+        tab.url.startsWith('about:') ||
+        tab.url.startsWith('brave://')
+      ) {
+        continue;
+      }
+
+      const lastActive = lastActiveTimes[tab.id];
+      if (lastActive && (now - lastActive > INACTIVITY_THRESHOLD_MS)) {
+        try {
+          await chrome.tabs.discard(tab.id);
+          console.log(`[Keeps] Onglet suspendu par inactivité: ${tab.title}`);
+          chrome.runtime.sendMessage({ action: 'REFRESH_TABS' }).catch(() => { });
+        } catch (e) {
+        }
+      }
+    }
+  } catch (error) {
+    console.error('[Keeps] Erreur lors du check d\'inactivité:', error);
+  }
+}
+
+chrome.alarms.create('checkInactivity', { periodInMinutes: CHECK_INTERVAL_MINUTES });
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === 'checkInactivity') {
+    checkInactiveTabs();
+  }
 });

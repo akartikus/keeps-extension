@@ -9,7 +9,8 @@
     "storage",
     "favicon",
     "processes",
-    "system.memory"
+    "system.memory",
+    "alarms"
   ],
   "background": {
     "service_worker": "background.js"
