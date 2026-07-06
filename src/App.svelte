@@ -26,6 +26,9 @@
   /** @type {any[]} */
   let workspaces = $state([]);
 
+  /** @type {any | null} */
+  let currentWorkspaceId = $state(null);
+
   onMount(() => {
     // 1. Chargement initial séquentiel de toutes les données du disque
     Promise.all([loadIcebox(), loadWorkspaces()]).then(() => {
@@ -51,6 +54,8 @@
           if (changes.workspaces) {
             // @ts-ignore
             workspaces = changes.workspaces.newValue || [];
+            const displayedWs = workspaces.find((w) => w.displayed === true);
+            currentWorkspaceId = displayedWs ? displayedWs.id : null;
           }
         }
       });
@@ -75,7 +80,6 @@
         if (restoringCount === 0) refreshTabs();
       });
 
-      // 🌟 Événement déclenché quand l'utilisateur change d'onglet actif
       chrome.tabs.onActivated.addListener(() => {
         if (restoringCount === 0) refreshTabs();
       });
@@ -84,7 +88,6 @@
         if (restoringCount === 0) refreshTabs();
       });
 
-      // @ts-ignore
       // @ts-ignore
       chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
         // On attend bien que le statut passe à 'complete' (page chargée)
@@ -199,6 +202,8 @@
         chrome.storage.local.get({ workspaces: [] }, (result) => {
           // @ts-ignore
           workspaces = result.workspaces || [];
+          const displayedWs = workspaces.find((w) => w.displayed === true);
+          currentWorkspaceId = displayedWs ? displayedWs.id : null;
           // @ts-ignore
           resolve();
         });
@@ -209,6 +214,7 @@
     });
   }
 
+  // Save current context and create an empty
   function saveCurrentContext(customName = null) {
     const tabsToSave = Array.from(tabs).map((t) => ({
       title: t.title,
@@ -223,23 +229,53 @@
       return;
     }
 
-    const timestamp = new Date();
-    const workspaceName =
-      customName ||
-      `Espace du ${timestamp.toLocaleDateString()} - ${timestamp.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
-
-    const newWorkspace = {
-      id: Date.now(),
-      name: workspaceName,
-      tabs: tabsToSave,
-      createdAt: timestamp.toISOString(),
-    };
-
     if (typeof chrome !== "undefined" && chrome.storage) {
       chrome.storage.local.get({ workspaces: [] }, (result) => {
         const currentWorkspaces = result.workspaces || [];
-        // @ts-ignore
-        const updatedWorkspaces = [...currentWorkspaces, newWorkspace];
+
+        const timestamp = new Date();
+        const workspaceName =
+          customName ||
+          `Espace du ${timestamp.toLocaleDateString()} - ${timestamp.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+
+        let workspaceToSave;
+        if (currentWorkspaceId !== null) {
+          // Mise à jour d'un workspace existant
+          const existing = currentWorkspaces.find((w) => w.id === currentWorkspaceId);
+          workspaceToSave = {
+            ...existing, // Conserver les autres propriétés du workspace
+          tabs: tabsToSave,
+            displayed: true, // Ce workspace est maintenant celui affiché
+        };
+        } else {
+          // Création d'un nouveau workspace
+          workspaceToSave = {
+            id: Date.now(),
+            name: workspaceName,
+            createdAt: timestamp.toISOString(),
+            tabs: tabsToSave,
+            displayed: true, // Ce nouveau workspace est celui affiché
+          };
+        }
+
+        // Mise à jour de tous les workspaces avec le flag 'displayed'
+        let updatedWorkspaces;
+        if (currentWorkspaceId !== null) {
+          // Si on met à jour un workspace existant, on itère pour trouver et mettre à jour.
+          // Tous les autres sont mis à displayed: false.
+          updatedWorkspaces = currentWorkspaces.map((w) => {
+            if (w.id === workspaceToSave.id) {
+              return workspaceToSave; // Le workspace mis à jour
+            }
+            return { ...w, displayed: false }; // Les autres ne sont plus affichés
+          });
+              } else {
+          // Si on crée un nouveau workspace, tous les anciens passent à displayed: false,
+          // et le nouveau est ajouté.
+          updatedWorkspaces = currentWorkspaces.map((w) => ({ ...w, displayed: false }));
+          updatedWorkspaces.push(workspaceToSave);
+              }
+
 
         chrome.storage.local.set({ workspaces: updatedWorkspaces }, () => {
           // PROTECTION : Open an emplty tab to avoid browser to close
@@ -251,13 +287,16 @@
               // @ts-ignore
               chrome.tabs.remove(tabIds, () => {
                 refreshTabs();
-              });
-            }
+        });
+    }
           });
+          updateCurrentWorkspaceId(null); // Après sauvegarde, on n'est plus dans un workspace "actif"
         });
       });
-    }
   }
+  }
+
+
   /** Restore an existing wordspace and automatically save the current tabs in a workspace*/
   /** @param {any} workspaceToRestore */
   function restoreWorkspace(workspaceToRestore) {
@@ -274,39 +313,54 @@
       // STEP  1 : retreive list from storage
       chrome.storage.local.get({ workspaces: [] }, (result) => {
         const currentWorkspaces = result.workspaces || [];
+        const timestamp = new Date();
+        const cleanName = `Espace du ${timestamp.toLocaleDateString()} - ${timestamp.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+        const backupTabs = currentTabsSnapshot.map((t) => ({
+          title: t.title,
+          url: t.url,
+          favIconUrl: t.favIconUrl,
+        }));
 
         let nextWorkspaces = [];
+        const processedIds = new Set(); // Pour éviter les doublons
 
-        // --- Sauvegarde automatique de la session qui va être fermée ---
-        if (currentTabsSnapshot && currentTabsSnapshot.length > 0) {
-          const timestamp = new Date();
+        const targetWorkspace = { ...workspaceToRestore, displayed: true };
+        nextWorkspaces.push(targetWorkspace);
+        processedIds.add(targetWorkspace.id);
 
-          // TODO: If the opened workspace is an defined workspace keep the name
-          const cleanName = `Espace du ${timestamp.toLocaleDateString()} - ${timestamp.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+        if (currentTabsSnapshot.length > 0) {
+          if (currentWorkspaceId !== null && currentWorkspaceId !== workspaceToRestore.id) {
+            // Si la session courante est un workspace existant (et différent de celui à restaurer), on le met à jour
+            const currentWs = currentWorkspaces.find(w => w.id === currentWorkspaceId);
+            if (currentWs) {
+              nextWorkspaces.push({
+                ...currentWs,
+                tabs: backupTabs,
+                displayed: false // Il n'est plus le workspace affiché
+              });
+              processedIds.add(currentWs.id);
+  }
+          } else if (currentWorkspaceId === null) {
+            // Si aucune session n'était active, on crée un nouveau workspace de backup
+            const backupWorkspace = {
+              id: Date.now(),
+              name: cleanName,
+              createdAt: timestamp.toISOString(),
+              tabs: backupTabs,
+              displayed: false,
+            };
+            nextWorkspaces.push(backupWorkspace);
+            processedIds.add(backupWorkspace.id);
+          }
+          // Si currentWorkspaceId === workspaceToRestore.id, on ne crée pas de backup séparé,
+          // targetWorkspace (qui a les onglets à restaurer) prévaut.
+        }
 
-          const backupWorkspace = {
-            id: Date.now(),
-            name: cleanName,
-            // @ts-ignore
-            tabs: currentTabsSnapshot.map((t) => ({
-              title: t.title,
-              url: t.url,
-              favIconUrl: t.favIconUrl,
-            })),
-            createdAt: timestamp.toISOString(),
-          };
-
-          nextWorkspaces = [
-            // @ts-ignore
-            ...currentWorkspaces.filter((w) => w.id !== workspaceToRestore.id),
-            backupWorkspace,
-          ];
-        } else {
-          // @ts-ignore
-          nextWorkspaces = currentWorkspaces.filter(
-            // @ts-ignore
-            (w) => w.id !== workspaceToRestore.id,
-          );
+        for (const w of currentWorkspaces) {
+          if (!processedIds.has(w.id)) {
+            nextWorkspaces.push({ ...w, displayed: false });
+            processedIds.add(w.id);
+          }
         }
 
         // STEP 2 : Save updated wordspaces list and open expected workspace
@@ -340,6 +394,7 @@
                   () => {
                     restoringCount = Math.max(0, restoringCount - 1);
                     refreshTabs();
+                    updateCurrentWorkspaceId(workspaceToRestore.id);
                   },
                 );
               };
@@ -352,23 +407,51 @@
               }
             },
           );
+          updateCurrentWorkspaceId(workspaceToRestore.id);
         });
       });
-    }
+  }
   }
 
   /** @param {any} id */
   function deleteWorkspace(id) {
-    const nextWorkspaces = workspaces.filter((w) => w.id !== id);
-    chrome.storage.local.set({ workspaces: nextWorkspaces });
+    chrome.storage.local.get({ workspaces: [] }, (result) => {
+      const currentWorkspaces = result.workspaces || [];
+      const nextWorkspaces = currentWorkspaces.filter((w) => w.id !== id);
+      
+      const deletedWorkspace = currentWorkspaces.find((w) => w.id === id);
+      if (deletedWorkspace && deletedWorkspace.displayed === true) {
+        const displayedWs = nextWorkspaces.find((w) => w.displayed === true);
+        currentWorkspaceId = displayedWs ? displayedWs.id : null;
+      }
+      
+      chrome.storage.local.set({ workspaces: nextWorkspaces });
+    });
   }
-
   /** @param {any} tab */
   function focusTab(tab) {
     if (typeof chrome !== "undefined" && chrome.tabs) {
       chrome.tabs.update(tab.id, { active: true }, () => {
         chrome.windows.update(tab.windowId, { focused: true });
       });
+    }
+  }
+
+  /** @param {string | null} id */
+  function updateCurrentWorkspaceId(id) {
+    currentWorkspaceId = id;
+    if (typeof chrome !== "undefined" && chrome.storage) {
+      chrome.storage.local.get({ workspaces: [] }, (result) => {
+        const currentWorkspaces = result.workspaces || [];
+        const updatedWorkspaces = currentWorkspaces.map((w) => ({
+          ...w,
+          displayed: w.id === id,
+        }));
+        chrome.storage.local.set({ workspaces: updatedWorkspaces, currentWorkspaceId: id });
+      });
+    } else {
+      // Fallback pour le développement local hors extension (pas de chrome.storage)
+      console.warn("chrome.storage non disponible, impossible de mettre à jour currentWorkspaceId.");
     }
   }
 
@@ -417,6 +500,10 @@
         class="text-xs font-medium text-zinc-400 tracking-wide uppercase shrink-0"
       >
         Espace de travail actuel ({tabs.length})
+        <span class="text-[10px] text-zinc-500 font-normal lowercase italic">
+          — {workspaces.find((ws) => ws.id === currentWorkspaceId)?.name ||
+            "Session actuelle"}
+        </span>
       </h2>
 
       {#if tabs.length === 0}

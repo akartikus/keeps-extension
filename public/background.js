@@ -1,14 +1,22 @@
 // Configure panel on start
 chrome.runtime.onInstalled.addListener(() => {
+  console.log('[Keeps Background] Event: onInstalled/onUpdated');
   chrome.sidePanel
     .setPanelBehavior({ openPanelOnActionClick: true })
     .catch((error) =>
       console.error('Erreur de configuration du sidePanel:', error),
     );
+  initializeLastActiveTimes(); // 🌟 Initialisation déplacée ici
+});
+
+chrome.runtime.onStartup.addListener(() => {
+  console.log('[Keeps Background] Event: onStartup');
+  initializeLastActiveTimes(); // 🌟 Initialisation déplacée ici
 });
 
 chrome.commands.onCommand.addListener((command) => {
   if (command === 'save-to-icebox') {
+    console.log('[Keeps Background] Command: save-to-icebox received');
     // 1. Retreive active tab of the current window
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       if (!tabs || tabs.length === 0) return;
@@ -38,7 +46,10 @@ chrome.commands.onCommand.addListener((command) => {
         chrome.storage.local.set(
           { icebox: [...currentIcebox, newIceboxItem] },
           () => {
-            chrome.tabs.remove(activeTab.id);
+            console.log(`[Keeps Background] Removing tab: ${activeTab.id} - ${activeTab.title}`);
+            chrome.tabs.remove(activeTab.id, () => {
+              console.log(`[Keeps Background] Tab removed: ${activeTab.id}`);
+            });
           },
         );
       });
@@ -47,6 +58,7 @@ chrome.commands.onCommand.addListener((command) => {
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  console.log(`[Keeps Background] Message received: ${message.action}`);
   switch (message.action) {
     case 'GET_TABS':
       chrome.tabs.query({ currentWindow: true }, (tabs) => {
@@ -156,11 +168,23 @@ const INACTIVITY_THRESHOLD_MS = 5 * 60 * 1000;
 const CHECK_INTERVAL_MINUTES = 1; 
 
 let lastActiveTimes = {}; // {tabId: timestamp}
+
+function initializeLastActiveTimes() {
 chrome.tabs.query({}, (tabs) => {
   tabs.forEach(tab => {
+      if (!(tab.id in lastActiveTimes)) { // Only add if not already present
     lastActiveTimes[tab.id] = Date.now();
+      }
   });
+    // Clean up any tabs that no longer exist
+    const currentTabIds = new Set(tabs.map(tab => tab.id));
+    for (const tabId in lastActiveTimes) {
+      if (!currentTabIds.has(parseInt(tabId))) {
+  delete lastActiveTimes[tabId];
+      }
+    }
 });
+}
 
 
 chrome.tabs.onActivated.addListener((activeInfo) => {
