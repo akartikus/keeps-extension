@@ -16,23 +16,18 @@ concurrency:
 
 jobs:
   build:
-    name: Build extension - Node.js ${{ matrix.node-version }}
+    name: Build Chrome extension
     runs-on: ubuntu-latest
     timeout-minutes: 10
-
-    strategy:
-      fail-fast: false
-      matrix:
-        node-version: ["20.x", "22.x"]
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Use Node.js ${{ matrix.node-version }}
+      - name: Use Node.js 22
         uses: actions/setup-node@v4
         with:
-          node-version: ${{ matrix.node-version }}
+          node-version: "22.x"
           cache: npm
           cache-dependency-path: package-lock.json
 
@@ -54,13 +49,11 @@ jobs:
           test -f dist/index.html
 
       - name: Package extension
-        if: matrix.node-version == '22.x'
         run: |
           cd dist
           zip -r ../keeps-extension.zip .
 
       - name: Upload extension artifact
-        if: matrix.node-version == '22.x'
         uses: actions/upload-artifact@v4
         with:
           name: keeps-extension
