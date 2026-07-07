@@ -48,15 +48,21 @@ jobs:
           test -f dist/manifest.json
           test -f dist/index.html
 
+      - name: Get extension version
+        id: version
+        run: |
+          VERSION=$(node -p "require('./public/manifest.json').version_name || require('./public/manifest.json').version")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
       - name: Package extension
         run: |
           cd dist
-          zip -r ../keeps-extension.zip .
+          zip -r "../keeps-extension-${{ steps.version.outputs.version }}.zip" .
 
       - name: Upload extension artifact
         uses: actions/upload-artifact@v4
         with:
-          name: keeps-extension
-          path: keeps-extension.zip
+          name: keeps-extension-${{ steps.version.outputs.version }}
+          path: keeps-extension-${{ steps.version.outputs.version }}.zip
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 7     
