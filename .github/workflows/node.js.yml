@@ -51,8 +51,14 @@ jobs:
       - name: Get extension version
         id: version
         run: |
-          VERSION=$(node -p "require('./public/manifest.json').version_name || require('./public/manifest.json').version")
+          VERSION=$(node --input-type=module -e "
+            import fs from 'node:fs';
+            const manifest = JSON.parse(fs.readFileSync('./dist/manifest.json', 'utf8'));
+            const version = manifest.version_name || manifest.version;
+            console.log(version.replace(/[^a-zA-Z0-9._-]/g, '-'));
+          ")
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Extension version: $VERSION"
 
       - name: Package extension
         run: |
@@ -65,4 +71,4 @@ jobs:
           name: keeps-extension-${{ steps.version.outputs.version }}
           path: keeps-extension-${{ steps.version.outputs.version }}.zip
           if-no-files-found: error
-          retention-days: 7     
+          retention-days: 7
